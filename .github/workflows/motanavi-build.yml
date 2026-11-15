@@ -1,0 +1,93 @@
+name: MotaNavi build
+
+on:
+  workflow_dispatch:   # запуск кнопкой "Run workflow"
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Copy source to a stable path
+        run: |
+          sudo mkdir -p /Users/Shared
+          cp -R "$GITHUB_WORKSPACE" /Users/Shared/
+          mv "/Users/Shared/$(basename "$GITHUB_WORKSPACE")" /Users/Shared/telegram-ios
+
+      - name: Apply MotaNavi changes
+        working-directory: /Users/Shared/telegram-ios
+        run: python3 motanavi/apply_motanavi.py
+
+      - name: Apply Ghostgram patches to submodules
+        working-directory: /Users/Shared/telegram-ios
+        run: |
+          apply_patch() {
+            dir="$1"; patch="$(pwd)/$2"
+            if git -C "$dir" apply --check "$patch" 2>/dev/null; then
+              git -C "$dir" apply "$patch" && echo "patched: $dir"
+            elif git -C "$dir" apply --reverse --check "$patch" 2>/dev/null; then
+              echo "already patched: $dir"
+            else
+              echo "ERROR: patch $patch does not apply to $dir"; exit 1
+            fi
+          }
+          apply_patch build-system/bazel-rules/rules_apple build-system/GGPatches/rules_apple-strip-shell-env.patch
+          apply_patch submodules/TgVoipWebrtc/tgcalls build-system/GGPatches/tgcalls-call-camera-masks.patch
+
+      - name: Own api_id / api_hash (optional)
+        working-directory: /Users/Shared/telegram-ios
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          if [ -n "$TG_API_ID" ] && [ -n "$TG_API_HASH" ]; then
+            python3 - <<'PY'
+          import json, os
+          p = "build-system/appstore-configuration.json"
+          d = json.load(open(p))
+          d["api_id"] = os.environ["TG_API_ID"]
+          d["api_hash"] = os.environ["TG_API_HASH"]
+          json.dump(d, open(p, "w"), indent=1)
+          print("используются ваши api_id / api_hash")
+          PY
+          else
+            echo "секреты TG_API_ID / TG_API_HASH не заданы, берутся стандартные из репозитория"
+          fi
+
+      - name: Build IPA
+        working-directory: /Users/Shared/telegram-ios
+        run: |
+          set -x
+          BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
+          BUILD_NUMBER="$(( $(git rev-list --count HEAD 2>/dev/null || echo 1) + $(cat build_number_offset) ))"
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            build \
+            --configurationPath="build-system/appstore-configuration.json" \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=release_arm64 \
+            --buildNumber="$BUILD_NUMBER" \
+            --outputBuildArtifactsPath build/artifacts
+          ls -la build/artifacts
+          mv build/artifacts/Telegram.ipa build/artifacts/MotaNavi.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: MotaNavi-ipa
+          path: /Users/Shared/telegram-ios/build/artifacts/MotaNavi.ipa
+          if-no-files-found: error
+
