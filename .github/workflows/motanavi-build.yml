@@ -66,6 +66,18 @@ jobs:
             echo "секреты TG_API_ID / TG_API_HASH не заданы, берутся стандартные из репозитория"
           fi
 
+      - name: Refresh expired fake provisioning profiles
+        working-directory: /Users/Shared/telegram-ios
+        run: |
+          python3 - <<'PY'
+          import glob, re
+          for p in glob.glob("build-system/fake-codesigning/profiles/*.mobileprovision"):
+              data = open(p, "rb").read()
+              new = re.sub(rb"(<key>ExpirationDate</key>\s*<date>)\d{4}(-\d\d-\d\dT[\d:]+Z</date>)", rb"\g<1>2046\g<2>", data)
+              open(p, "wb").write(new)
+              print("обновлён срок:", p, new != data)
+          PY
+
       - name: Build IPA
         working-directory: /Users/Shared/telegram-ios
         run: |
@@ -90,4 +102,3 @@ jobs:
           name: MotaNavi-ipa
           path: /Users/Shared/telegram-ios/build/artifacts/MotaNavi.ipa
           if-no-files-found: error
-
