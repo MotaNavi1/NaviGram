@@ -47,6 +47,33 @@ jobs:
               print("исправлено:", f)
           PY
 
+      - name: Disable CloudKit emergency fetch (crash when sideloaded)
+        working-directory: /Users/Shared/telegram-ios
+        run: |
+          python3 - <<'PY'
+          f = "submodules/CloudData/Sources/CloudData.swift"
+          t = open(f, encoding="utf-8").read()
+          if "MOTANAVI: CloudKit" in t:
+              print("уже сделано")
+          else:
+              a = t.index("@available(iOS 10.0, *)\nprivate func fetchRawData")
+              b = t.index("@available(iOS 10.0, *)\nprivate final class CloudDataPrefixContext")
+              new = (
+                  "@available(iOS 10.0, *)\n"
+                  "private func fetchRawData(prefix: String) -> Signal<Data, FetchError> {\n"
+                  "    // MOTANAVI: CloudKit needs an iCloud entitlement that sideloaded builds do not have;\n"
+                  "    // touching it aborts the app at launch, so the emergency datacenter fetch is disabled.\n"
+                  "    return Signal { subscriber in\n"
+                  "        subscriber.putError(.generic)\n"
+                  "        return ActionDisposable {\n"
+                  "        }\n"
+                  "    }\n"
+                  "}\n\n"
+              )
+              open(f, "w", encoding="utf-8").write(t[:a] + new + t[b:])
+              print("исправлено:", f)
+          PY
+
       - name: Apply Ghostgram patches to submodules
         working-directory: /Users/Shared/telegram-ios
         run: |
