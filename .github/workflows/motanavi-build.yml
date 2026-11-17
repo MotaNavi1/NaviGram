@@ -30,6 +30,23 @@ jobs:
         working-directory: /Users/Shared/telegram-ios
         run: python3 motanavi/apply_motanavi.py
 
+      - name: App Group fallback (for sideloading)
+        working-directory: /Users/Shared/telegram-ios
+        run: |
+          python3 - <<'PY'
+          f = "submodules/TelegramUI/Sources/AppDelegate.swift"
+          t = open(f, encoding="utf-8").read()
+          old = "let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)"
+          new = ("// MOTANAVI: if the signing profile has no App Group, use the app's own Documents folder\n"
+                 "        let maybeAppGroupUrl: URL? = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName) ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first")
+          if "MOTANAVI: if the signing profile has no App Group" in t:
+              print("уже сделано")
+          else:
+              assert t.count(old) == 1, t.count(old)
+              open(f, "w", encoding="utf-8").write(t.replace(old, new))
+              print("исправлено:", f)
+          PY
+
       - name: Apply Ghostgram patches to submodules
         working-directory: /Users/Shared/telegram-ios
         run: |
