@@ -30,6 +30,10 @@ jobs:
         working-directory: /Users/Shared/telegram-ios
         run: python3 motanavi/apply_motanavi.py
 
+      - name: Apply MotaNavi part 2 (plugins, microphone)
+        working-directory: /Users/Shared/telegram-ios
+        run: python3 motanavi/apply_part2.py
+
       - name: App Group fallback (for sideloading)
         working-directory: /Users/Shared/telegram-ios
         run: |
